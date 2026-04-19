@@ -32,6 +32,14 @@ ANOMALY_WOW_THRESHOLD_RATIO = 0.10
 # Anomaly: week-over-week percentage change threshold, for count/currency.
 ANOMALY_WOW_THRESHOLD_PCT = 0.15
 
+ANOMALY_MIN_BASELINE_CURRENCY = 0.50  # $0.50 — avoid $0.001 -> $0.01 noise
+
+# For deterioration trends, the total change across N weeks must exceed
+# this absolute threshold (ratio) or this pct threshold (currency/count).
+DETERIORATION_MIN_TOTAL_CHANGE_RATIO = 0.05   # 5pp
+DETERIORATION_MIN_TOTAL_CHANGE_PCT = 0.10     # 10%
+
+
 # Deteriorating trend: minimum consecutive weeks of movement in the wrong
 # direction to flag a zone.
 DETERIORATION_MIN_WEEKS = 3
@@ -127,6 +135,9 @@ def detect_anomalies(
                 change_magnitude = abs(abs_change)
                 pct_change = (abs_change / v_prev * 100) if v_prev != 0 else None
             else:  # count, currency
+                # Skip near-zero baselines — pct changes become meaningless
+                if abs(v_prev) < ANOMALY_MIN_BASELINE_CURRENCY and meta.unit == "currency":
+                    continue
                 if v_prev == 0:
                     continue
                 pct_change = (v_now - v_prev) / v_prev
@@ -219,6 +230,14 @@ def detect_deteriorating_trends(
             first_val = values[0]
             pct_change = (total_change / first_val * 100) if first_val != 0 else None
 
+            # Require the total drop to be material, not just drift
+            if meta.unit in ("ratio", "percentage"):
+                if abs(total_change) < DETERIORATION_MIN_TOTAL_CHANGE_RATIO:
+                    continue
+            else:
+                if first_val == 0 or abs(total_change / first_val) < DETERIORATION_MIN_TOTAL_CHANGE_PCT:
+                    continue
+
             findings.append({
                 "category": "deteriorating_trend",
                 "country": country,
@@ -235,8 +254,14 @@ def detect_deteriorating_trends(
                 "severity": float(abs(total_change)),
             })
 
-    findings.sort(key=lambda f: f["severity"], reverse=True)
-    return findings
+    seen = {}
+    for f in findings:
+        key = (f["country"], f["city"], f["zone"], f["metric"])
+        if key not in seen or f["severity"] > seen[key]["severity"]:
+            seen[key] = f
+    deduped = list(seen.values())
+    deduped.sort(key=lambda f: f["severity"], reverse=True)
+    return deduped
 
 
 # ---------------------------------------------------------------------------
@@ -321,8 +346,14 @@ def detect_peer_divergence(
                 "severity": float(abs(relative_gap)),
             })
 
-    findings.sort(key=lambda f: f["severity"], reverse=True)
-    return findings
+    seen = {}
+    for f in findings:
+        key = (f["country"], f["city"], f["zone"], f["metric"])
+        if key not in seen or f["severity"] > seen[key]["severity"]:
+            seen[key] = f
+    deduped = list(seen.values())
+    deduped.sort(key=lambda f: f["severity"], reverse=True)
+    return deduped
 
 
 # ---------------------------------------------------------------------------
@@ -442,8 +473,15 @@ def detect_opportunities(
             })
 
     # Only keep the top 20 opportunities — otherwise this floods the report
-    findings.sort(key=lambda f: f["severity"], reverse=True)
-    return findings[:20]
+    seen = {}
+    for f in findings:
+        key = (f["country"], f["city"], f["zone"], f["metric"])
+        if key not in seen or f["severity"] > seen[key]["severity"]:
+            seen[key] = f
+    deduped = list(seen.values())
+    deduped.sort(key=lambda f: f["severity"], reverse=True)
+    # Only keep the top 20 opportunities — otherwise this floods the report
+    return deduped[:20]
 
 
 # ---------------------------------------------------------------------------
