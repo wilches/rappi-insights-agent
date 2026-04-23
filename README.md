@@ -3,7 +3,7 @@
 > **Análisis conversacional de datos + reportes ejecutivos automáticos para los equipos de SP&A y Operations de Rappi.**
 > Construido como caso técnico. ~30 horas de trabajo enfocado, en solitario.
 
-## 🔗 [Demo en vivo](https://rappi-insights-agent-qcqzejan8glrkrzswuhhl8.streamlit.app/)
+## 🔗 Puedes ver el funcionamiento aquí -> [Demo en vivo](https://rappi-insights-agent-t2ynoxnchn5vevvxtykaea.streamlit.app/)
 
 
 
