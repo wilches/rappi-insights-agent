@@ -178,19 +178,33 @@ def compare_segments(
     metric: str,
     segment_by: Literal["ZONE_TYPE", "ZONE_PRIORITIZATION", "COUNTRY"],
     segment_values: list[str] | None = None,
-    week_offset: int = 0,
+    week_offset: int | None = 0,
+    weeks_window: int | None = None,
     country: str | None = None,
 ) -> dict:
     """
     Compare the average of a metric across two or more segments.
 
-    Example: compare Perfect Order between Wealthy and Non Wealthy zones in MX.
-    Segmentation uses the metric's declared aggregation (mean or weighted mean).
+    Either pass `week_offset` (single week, default current) OR `weeks_window`
+    (average across the last N weeks). `weeks_window` takes precedence if both
+    are given — it's the richer, less-noisy measure.
     """
     _validate_metric(metric)
     meta = get_metric(metric)
 
-    subset = _filter_base(df, metric, week_offset, country)
+    # Build the time-filtered base
+    if weeks_window is not None and weeks_window > 1:
+        time_mask = df["week_offset"] < weeks_window
+        time_label = f"last {weeks_window} weeks (avg)"
+    else:
+        time_mask = df["week_offset"] == (week_offset or 0)
+        time_label = f"L{week_offset or 0}W"
+
+    base_mask = (df["METRIC"] == metric) & time_mask
+    if country:
+        base_mask &= df["COUNTRY"].str.upper() == country.upper()
+    subset = df.loc[base_mask].copy()
+
     if segment_values is not None:
         subset = subset[subset[segment_by].str.lower().isin(
             [v.lower() for v in segment_values]
@@ -208,15 +222,30 @@ def compare_segments(
 
     # Aggregate per segment using the metric's declared strategy
     if meta.aggregation == "weighted_mean_by_orders":
-        agg = _weighted_mean_by_orders(
-            subset, metric, df, group_by=[segment_by], week_offset=week_offset,
-        )
+        # When averaging across weeks, we weight within each week and mean across.
+        if weeks_window is not None and weeks_window > 1:
+            per_week = []
+            for w in range(weeks_window):
+                w_subset = subset[subset["week_offset"] == w]
+                if w_subset.empty:
+                    continue
+                wk_agg = _weighted_mean_by_orders(
+                    w_subset, metric, df, group_by=[segment_by], week_offset=w
+                )
+                per_week.append(wk_agg)
+            if per_week:
+                agg = pd.concat(per_week).groupby(segment_by, as_index=False)["value"].mean()
+            else:
+                agg = pd.DataFrame(columns=[segment_by, "value"])
+        else:
+            agg = _weighted_mean_by_orders(
+                subset, metric, df, group_by=[segment_by], week_offset=week_offset or 0,
+            )
     elif meta.aggregation == "sum":
         agg = subset.groupby(segment_by)["value"].sum().reset_index()
     else:  # mean
         agg = subset.groupby(segment_by)["value"].mean().reset_index()
 
-    # Also compute zone counts per segment (transparency)
     counts = subset.groupby(segment_by).size().reset_index(name="n_zones")
     agg = agg.merge(counts, on=segment_by)
 
@@ -225,14 +254,13 @@ def compare_segments(
             "segment": str(row[segment_by]),
             "value": float(row["value"]),
             "value_formatted": meta.format_value(float(row["value"])),
+            "value_precise": float(row["value"]),  # extra precision for LLM reasoning
             "n_zones": int(row["n_zones"]),
         }
         for _, row in agg.iterrows()
     ]
-    # Sort rows by value, direction-aware
     rows.sort(key=lambda r: r["value"], reverse=meta.is_higher_better)
 
-    # Compute a delta between the top two segments if applicable
     delta = None
     if len(rows) >= 2:
         delta = rows[0]["value"] - rows[1]["value"]
@@ -243,7 +271,9 @@ def compare_segments(
             "metric": metric,
             "segment_by": segment_by,
             "aggregation": meta.aggregation,
-            "week_offset": week_offset,
+            "time_scope": time_label,
+            "weeks_window": weeks_window,
+            "week_offset": week_offset if weeks_window is None else None,
             "country": country,
             "delta_top_two": delta,
         },
