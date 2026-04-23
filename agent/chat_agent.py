@@ -113,7 +113,25 @@ class ChatAgent:
                 text_parts = [
                     part.text for part in (content.parts or []) if part.text
                 ]
-                final_text = "\n".join(text_parts).strip() or "(respuesta vacía)"
+                final_text = "\n".join(text_parts).strip()
+
+                if not final_text:
+                    # Empty response — build an informative fallback message.
+                    # Possible causes: safety filter, token cutoff, empty model output.
+                    finish_reason = getattr(candidate, "finish_reason", None)
+                    safety_ratings = getattr(candidate, "safety_ratings", None)
+                    logger.warning(
+                        f"Empty model response. "
+                        f"finish_reason={finish_reason}, "
+                        f"safety_ratings={safety_ratings}, "
+                        f"parts={content.parts}"
+                    )
+                    final_text = (
+                        f"⚠️ El modelo no devolvió una respuesta de texto "
+                        f"(finish_reason={finish_reason}). "
+                        f"Intenta reformular la pregunta."
+                    )
+
                 return AgentResponse(
                     text=final_text,
                     tool_calls=tool_calls_log,

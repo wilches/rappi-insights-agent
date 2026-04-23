@@ -1,266 +1,242 @@
-# Rappi Operations Intelligence
+# 📊 Rappi Operations Intelligence
 
-> Sistema conversacional + reporting automático sobre métricas operacionales por zona, para equipos de SP&A y Operations.
+> **Análisis conversacional de datos + reportes ejecutivos automáticos para los equipos de SP&A y Operations de Rappi.**
+> Construido como caso técnico. ~30 horas de trabajo enfocado, en solitario.
 
-Permite a usuarios no técnicos:
-- **Hacer preguntas en lenguaje natural** sobre 14 métricas operacionales en 9 países y 1,092 zonas (chat).
-- **Recibir insights accionables** automáticamente cada semana (reporte ejecutivo).
+## 🔗 [Demo en vivo](https://rappi-insights-agent-qcqzejan8glrkrzswuhhl8.streamlit.app/)
 
-Todos los números que se presentan vienen de `pandas` sobre los CSVs reales. El LLM (Gemini 2.5 Flash-Lite) se encarga sólo de entender intención y redactar respuestas — nunca calcula ni estima valores.
 
----
-
-## Demo rápido
-
-![Screenshot pendiente]
-*(Opcional: agrega una captura del UI aquí)*
-
-Preguntas de ejemplo que el sistema responde correctamente:
-
-- *"¿Cuáles son las 5 zonas con mayor Lead Penetration esta semana?"*
-- *"Compara el Perfect Orders entre zonas Wealthy y Non Wealthy en México en las últimas 5 semanas."*
-- *"Muéstrame la evolución de Gross Profit UE en Chapinero."*
-- *"¿Qué zonas tienen alto Lead Penetration pero bajo Perfect Orders?"*
-- *"¿Qué zonas crecen más en órdenes y qué podría explicarlo?"*
 
 ---
 
-## Arquitectura
+## 🎯 El problema
+
+Rappi opera en 9 países con más de 1,000 zonas. Los equipos de Strategy, Planning & Analytics (SP&A) y Operations necesitan acceso constante a los datos para tomar decisiones, pero:
+
+- **Acceder a insights requiere SQL/Python** — los usuarios no técnicos quedan bloqueados.
+- **El análisis manual semanal consume horas** — alguien tiene que cazar anomalías, tendencias y zonas con bajo desempeño.
+
+Este sistema resuelve ambos problemas. Usuarios no técnicos hacen preguntas en español o inglés y reciben respuestas confiables. Un reporte ejecutivo semanal se genera automáticamente con hallazgos rankeados y accionables.
+
+---
+
+## ⚡ Pruébalo en 30 segundos
+
+1. Abre [el demo en vivo](https://TU-APP.streamlit.app)
+2. Haz clic en cualquier pregunta de ejemplo en la barra lateral — o escribe la tuya
+3. Cambia a la pestaña **Reporte Ejecutivo** → haz clic en **Generate report**
+
+O prueba estas:
 
 ```
-┌─────────────────────────────────────────────┐
-│  Streamlit UI (chat tab + report tab)       │
-└────────────────┬────────────────────────────┘
-                 │
-        ┌────────┴────────┐
-        ▼                 ▼
-┌──────────────┐  ┌──────────────┐
-│  ChatAgent   │  │  Insights    │
-│  (Gemini +   │  │  Engine      │
-│  tool calls) │  │  (pure Py)   │
-└──────┬───────┘  └──────┬───────┘
-       │                 │
-       └────────┬────────┘
-                ▼
-┌─────────────────────────────────────────────┐
-│  Analytical core (pure Python)              │
-│    primitives.py   — 6 deterministic funcs  │
-│    detectors.py    — 5 anomaly detectors    │
-└────────────────┬────────────────────────────┘
-                 ▼
-┌─────────────────────────────────────────────┐
-│  Data layer                                 │
-│    data_loader.py       — normalize + val.  │
-│    metric_dictionary.py — business semantic │
-└─────────────────────────────────────────────┘
+¿Cuáles son las 5 zonas problemáticas por Gross Profit UE en México?
+Compara el Perfect Orders entre zonas Wealthy y Non Wealthy en las últimas 4 semanas.
+¿Qué zonas crecen más en órdenes y qué podría explicarlo?
 ```
-
-### Principios de diseño
-
-1. **Números del código, palabras del LLM.** Toda operación numérica ocurre en pandas con funciones deterministas. El LLM sólo interpreta intención del usuario y genera prosa. Esto elimina alucinaciones numéricas por construcción.
-2. **Tool calling con schemas estrictos.** El LLM no tiene acceso a la data cruda — sólo puede llamar a 7 herramientas con parámetros tipados (metrics, countries, etc. son enums). Imposible inventar nombres de zona o métrica.
-3. **Semántica de negocio centralizada.** El `metric_dictionary.py` codifica dirección (higher/lower is better), unidad, estrategia de agregación y aliases para cada métrica. Es la única fuente de verdad sobre qué significa cada número.
-4. **Separación online vs offline.** El chat es online (scope desconocido, requiere tool calling) y el reporte es offline (scope fijo, un sólo LLM call al final). Esto reduce costo del reporte en 10–20× vs si lo orquestara el LLM.
 
 ---
 
-## Stack
+## 🧠 La apuesta arquitectónica central
 
-| Capa | Tecnología | Por qué |
+Los LLMs son excelentes con el lenguaje pero poco confiables con números. Entonces:
+
+> **Los números vienen de pandas. Las palabras vienen del LLM. Nunca al revés.**
+
+El LLM nunca calcula valores. Elige una herramienta, pasa argumentos, recibe un resultado determinista de pandas, y escribe prosa fundamentada en ese resultado. Esto elimina la alucinación numérica por construcción.
+
+```
+┌──────────────────┐
+│ Usuario: "top 5  │
+│ zonas por X"     │
+└────────┬─────────┘
+         ▼
+┌──────────────────┐      ┌──────────────────┐
+│ Gemini elige una │◀────▶│ Schemas de tools │
+│ herramienta      │      │ estrictos (enums)│
+└────────┬─────────┘      └──────────────────┘
+         ▼
+┌──────────────────┐
+│ pandas computa   │  ← determinista, testeable
+│ la respuesta     │    14 unit tests, 0 flaky
+└────────┬─────────┘
+         ▼
+┌──────────────────┐
+│ Gemini compone   │  ← solo traduce a prosa
+│ respuesta en ESP │    no puede alucinar números
+└──────────────────┘
+```
+
+---
+
+## 🏗️ Arquitectura
+
+### Stack de cuatro capas, con dependencias estrictas en una sola dirección
+
+| Capa | Responsabilidad | Tecnología |
 |---|---|---|
-| LLM | Gemini 2.5 Flash-Lite | Tier gratuito genuino (1000 RPD), tool calling confiable, 10× más barato que GPT-4 o Claude Sonnet |
-| Análisis | pandas + numpy | Determinismo numérico en cada operación |
-| UI | Streamlit | Velocidad de desarrollo para demo; no requiere frontend separado |
-| SDK | `google-genai` oficial | SDK directo — sin frameworks intermedios (ver "Trade-offs") |
+| **UI** | Pestañas de chat + reporte, transparencia de tool calls | Streamlit |
+| **Orquestación** | Tool calling del LLM (chat) • ranking de findings (reporte) | SDK `google-genai` |
+| **Núcleo analítico** | 6 primitivas + 5 detectores, todo Python puro | pandas, numpy |
+| **Datos** | CSV → formato largo normalizado + validación semántica | pandas |
 
-**No usé LangChain / LlamaIndex / CrewAI** porque el problema no los necesita: no hay RAG, no hay multi-agent, la memoria conversacional es trivial. Una arquitectura en capas bien separadas me da portabilidad de LLM (cambiar a OpenAI o Claude sería ~40 líneas en `chat_agent.py`) sin los costos de abstracción de un framework. Ver sección "Trade-offs" abajo.
+### Dos flujos, un mismo cerebro analítico
+
+```
+               ┌──────────────────┐
+               │  Núcleo          │
+               │  Analítico       │
+               │  (compartido)    │
+               └────────┬─────────┘
+                        │
+            ┌───────────┴───────────┐
+            ▼                       ▼
+     ┌──────────────┐       ┌──────────────┐
+     │  Chat Agent  │       │   Reporte    │
+     │   (online)   │       │   (offline)  │
+     │ 2 LLM calls  │       │ 1 LLM call   │
+     │  por turno   │       │  por reporte │
+     └──────────────┘       └──────────────┘
+```
+
+**¿Por qué dos patrones?** El chat es *online* — scope desconocido, requiere tool-calling. El reporte es *offline* — scope fijo, pre-computo todo y luego le pido al LLM que narre. Reduce el costo del reporte 10–20× vs orquestarlo como un chat multi-turno.
+
+### Diccionario de métricas — la capa de semántica de negocio
+
+Un diccionario Python que codifica, para cada una de las 14 métricas:
+- **Dirección** — ¿mayor es mejor, o menor?
+- **Unidad** — ratio, moneda, conteo (determina el formato)
+- **Agregación** — mean, sum, o weighted mean por órdenes (zonas pequeñas no deben distorsionar promedios a nivel país)
+- **Rango válido** — usado para validación de calidad de datos al cargar
+- **Aliases** — formas comunes en que los usuarios se refieren a la métrica
+
+Sin esto, preguntar *"top 5 zonas problemáticas por markdowns"* retornaría las *mejores* zonas en lugar de las *peores*, porque `Restaurants Markdowns / GMV` es lower-is-better. El diccionario hace que las consultas conscientes de la dirección sean triviales.
 
 ---
 
-## Setup y ejecución
-
-### Requisitos
-
-- Python 3.10+
-- API key de Gemini (tier gratuito funciona): [obtener aquí](https://aistudio.google.com/apikey)
-
-### Instalación
-
-```bash
-git clone <repo-url>
-cd rappi-insights
-
-python -m venv .venv
-.venv\Scripts\Activate.ps1    # Windows
-source .venv/bin/activate      # macOS/Linux
-
-pip install -r requirements.txt
-```
-
-### Configuración
-
-Crea `.env` en la raíz del proyecto:
-
-```
-GEMINI_API_KEY=tu_api_key_aqui
-```
-
-Coloca los CSVs en `data/`:
-
-```
-data/
-  metrics.csv
-  orders.csv
-```
-
-### Ejecución
-
-**UI web (demo principal):**
-```bash
-streamlit run ui/app.py
-```
-Abre http://localhost:8501
-
-**CLI del chat (debugging):**
-```bash
-python -m scripts.chat_cli
-```
-
-**Generar reporte ejecutivo sin UI:**
-```bash
-python -m scripts.generate_report
-# → reports/executive_report_<timestamp>.md
-```
-
-**Correr tests:**
-```bash
-pytest analytics/tests/ -v
-```
-
----
-
-## Estructura del proyecto
+## 📁 Qué hay en el repo
 
 ```
 rappi-insights/
-├── core/
-│   ├── data_loader.py          # CSV → long format + validación semántica
-│   └── metric_dictionary.py    # Diccionario de las 14 métricas: dirección, unidad, aliases
-├── analytics/
-│   ├── primitives.py           # 6 funciones deterministas (top_n, trend, compare, etc.)
-│   ├── detectors.py            # 5 detectores automáticos de anomalías, tendencias, etc.
-│   └── tests/                  # 14 unit tests
-├── agent/
-│   ├── tools.py                # Schemas tool-calling que Gemini consume
-│   ├── system_prompt.py        # Constitución del agente en español
-│   └── chat_agent.py           # Loop conversacional con memoria
-├── insights/
-│   ├── engine.py               # Ranking de findings por severidad de negocio
-│   └── report_generator.py     # Generación del reporte markdown
-├── ui/
-│   └── app.py                  # Streamlit — dos tabs (Chat + Report)
-├── scripts/                    # CLI tools
-│   ├── chat_cli.py
-│   ├── generate_report.py
-│   ├── preview_detectors.py
-│   └── test_gemini_connection.py
-├── reports/                    # Reportes generados (gitignored)
-├── data/                       # CSVs (no commiteados)
-├── KNOWN_ISSUES.md
-├── requirements.txt
+├── core/               # data loader + semántica de métricas
+├── analytics/          # 6 primitivas + 5 detectores + 14 tests
+├── agent/              # chat agent + schemas de tools + system prompt
+├── insights/           # motor de ranking + generador de reporte
+├── ui/                 # Streamlit app (dos tabs)
+├── scripts/            # entry points CLI para cada subsistema
+├── data/               # CSVs anonimizados (del brief del caso)
 └── README.md
+```
+
+Archivos clave para leer primero:
+- `core/metric_dictionary.py` — semántica de negocio
+- `analytics/primitives.py` — las 6 funciones deterministas
+- `agent/chat_agent.py` — el loop de tool-calling
+- `insights/report_generator.py` — generador offline de narrativa
+
+---
+
+## 🚀 Ejecutar localmente
+
+```bash
+git clone https://github.com/TU_USER/rappi-insights
+cd rappi-insights
+
+python -m venv .venv
+.venv\Scripts\Activate.ps1    # Windows PowerShell
+# o: source .venv/bin/activate   (macOS/Linux)
+
+pip install -r requirements.txt
+
+# Obtén una API key gratuita de Gemini en https://aistudio.google.com/apikey
+echo "GEMINI_API_KEY=tu_key" > .env
+
+streamlit run ui/app.py
+```
+
+**Alternativas CLI:**
+```bash
+python -m scripts.chat_cli          # chat en terminal
+python -m scripts.generate_report   # generación standalone del reporte
+pytest analytics/tests/ -v          # correr los 14 unit tests
 ```
 
 ---
 
-## Costo estimado
+## 💰 Costo
 
-**Desarrollo + demo de este proyecto: ~$0 USD** usando el tier gratuito de Gemini.
+**Desarrollo + demo: $0 USD.** Tier gratuito de Gemini Flash-Lite (1,000 RPD).
 
-Escalando a producción (tier pago):
+**Proyección en producción (pricing Tier 1):**
 
-| Operación | Costo por ejecución | Comentario |
+| Operación | Costo | Notas |
 |---|---|---|
-| 1 pregunta del chat | ~$0.0002 USD | Gemini Flash-Lite, 2 API calls por pregunta |
-| 1 reporte ejecutivo semanal | ~$0.001 USD | 1 API call único con findings pre-curados |
-| 10 preguntas por sesión | ~$0.002 USD | |
-| Uso interno SP&A (50 personas × 20 preguntas/día × 22 días) | ~$4 USD/mes | Todo el equipo completo |
-| Reporte semanal automatizado (1 por semana × 52) | ~$0.05 USD/año | Negligible |
+| 1 pregunta del chat | ~$0.0002 | 2 API calls por turno |
+| 1 reporte semanal | ~$0.001 | 1 API call total |
+| 50 personas × 20 consultas/día × 22 días | ~$4/mes | Todo el equipo de SP&A |
 
-**Elección del modelo:** Gemini Flash-Lite sobre Claude Sonnet / GPT-4 porque la calidad de tool calling era suficiente para este caso de uso (validado con ~20 preguntas en el golden set), a 10–30× menor costo. Para casos que requieran razonamiento complejo (ej: análisis estratégico narrativo profundo), migraría a Sonnet solo en la capa de report narrative.
+Elección del modelo: **Gemini Flash-Lite** sobre Claude Sonnet / GPT-4 porque la precisión de tool-calling era suficiente a 10–30× menor costo. Si la narrativa compleja se vuelve un requisito, el generador de reportes sería fácil de intercambiar a Sonnet manteniendo el chat en Flash-Lite.
 
 ---
 
-## Trade-offs y decisiones
+## 🎛️ Decisiones de diseño (las interesantes)
 
-### Por qué tool calling con primitivas, no text-to-pandas
+### Tool-calling con primitivas, no text-to-pandas
 
-Consideré 3 alternativas:
+Consideré tres opciones:
+- **Text-to-pandas:** flexible pero alucina nombres de columnas; requiere sandbox seguro; impredecible.
+- **Toda la data en contexto del LLM:** 500k+ tokens por consulta; lento, caro, *sigue alucinando números*.
+- **Tool calling con primitivas tipadas** ← elegido. Determinismo numérico + flexibilidad lingüística.
 
-1. **Text-to-pandas:** LLM genera código, lo ejecutamos en sandbox. Máxima flexibilidad, pero alucina nombres de columnas, requiere sandbox seguro, impredecible. Para 14 métricas con schema fijo, la flexibilidad no agrega valor.
-2. **Toda la data en contexto del LLM:** 500k+ tokens por query. Lento, caro, sigue alucinando números. No escala.
-3. **Tool calling con primitivas tipadas (escogido):** Determinismo numérico + flexibilidad lingüística. El LLM elige qué herramienta usar; las herramientas hacen el cómputo.
+### Sin LangChain / LlamaIndex / CrewAI
 
-### Por qué NO LangChain
+- No hay RAG → LlamaIndex innecesario.
+- No hay multi-agent → CrewAI innecesario.
+- La memoria es una lista en session state → 10 líneas, no un framework.
+- Durante un demo en vivo de 30 minutos, un stack trace dentro de `langchain_core/` es inaceptable.
 
-- No hay RAG (no corpus no estructurado) → LlamaIndex innecesario.
-- No hay multi-agent (una sola interacción bien definida) → CrewAI innecesario.
-- Memoria conversacional = lista en session state de Streamlit. 10 líneas.
-- Schemas de herramientas = diccionario Python. El SDK de Gemini los consume directo.
-- En un demo en vivo de 30 minutos, una stack trace dentro de `langchain_core/...` es inaceptable.
-- Cambiar de Gemini a OpenAI/Claude serían ~40 líneas en `chat_agent.py`. El aislamiento lo da la arquitectura en capas, no el framework.
+La separación en capas da portabilidad (cambiar de provider LLM son ~40 líneas en `chat_agent.py`) sin el overhead del framework.
 
-### Por qué Streamlit
+### Streamlit sobre FastAPI + React
 
-Velocidad de desarrollo. FastAPI + React sería 10× más código sin agregar valor al demo. Si el producto llegara a producción, migraría el frontend a React y mantendría el backend Python.
-
-### Por qué un diccionario de métricas dedicado
-
-La única alternativa era que el LLM infiriera la semántica de cada métrica (dirección, unidad, agregación) a partir de su nombre. Esto fallaría en casos como `Restaurants Markdowns / GMV`, donde un valor alto es malo — el LLM tendería a tratarlo como "mayor es mejor" por default, produciendo respuestas confidentes pero incorrectas en preguntas tipo "top zonas problemáticas por markdowns." El diccionario elimina esta clase de bug.
+Velocidad de desarrollo. Si esto fuera a producción, mantendría el backend Python y migraría el frontend a React — pero para un build de 2 días, Streamlit cambia 10× menos código por un resultado suficientemente pulido.
 
 ---
 
-## Calidad de datos: hallazgos durante desarrollo
+## 🧪 Hallazgos de calidad de datos durante desarrollo
 
-El loader detectó y filtró valores fuera del rango semántico válido:
+El loader detectó 253 filas con valores fuera de rango para `Lead Penetration` — un ratio definido en [0, 1], pero observado hasta 393.9 en zonas de EC/BR/PE/CO/MX. Probablemente un artefacto del proceso de anonimización mencionado en el brief. El `metric_dictionary` declara rangos válidos por métrica; el loader filtra y loguea violaciones.
 
-- **Lead Penetration** (definida como ratio ∈ [0,1]): 253 filas con valores hasta 393.9, principalmente en Ecuador y menores en BR, PE, CO, MX.
-- **Hipótesis:** Artefacto del proceso de aleatorización documentado en la nota final del PDF ("datos anonimizados y randomizados").
-- **Manejo:** El `metric_dictionary` declara `min_value`/`max_value` por métrica; el loader filtra y loguea violaciones con detalle.
-
-Ver `KNOWN_ISSUES.md` para más detalles.
+En un deployment real, esto dispararía una alerta al equipo de Data Engineering. Ver [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md).
 
 ---
 
-## Limitaciones conocidas
+## ⚠️ Limitaciones conocidas
 
-1. **Rate limits del tier gratuito.** 1,000 RPD. Suficiente para desarrollo y demo; en producción migraría a Tier 1 o Vertex AI.
-2. **Memoria conversacional simple.** Mantengo toda la historia por sesión. Sesiones muy largas (50+ turnos) consumirían el context window. Próximo paso: sliding window con compresión semántica.
-3. **Sin persistencia.** Las conversaciones se pierden al reiniciar. En producción agregaría SQLite o Postgres para session state.
-4. **Chart generation no implementado.** Cuando el usuario pide "gráfica," el bot responde en texto. Próximo paso: agregar herramienta `create_chart` con Plotly.
-5. **Sin evals formales.** Validé manualmente ~20 preguntas. En producción necesitaría: golden set de 100+ preguntas, métricas de tool-selection accuracy, regression tests en CI.
-6. **Tier gratuito envía prompts a Google para training.** Para data real de Rappi, migrar a tier pago o Vertex AI es obligatorio por privacidad.
+1. **Rate limits del tier gratuito** (1,000 RPD). Suficiente para demo; en producción migraría a Tier 1 o Vertex AI.
+2. **Conversaciones en memoria.** Sin persistencia entre sesiones — necesitaría SQLite/Postgres.
+3. **Sin evals formales aún.** Validé manualmente contra ~20 preguntas. Producción necesitaría un golden set de 100+ con accuracy trackeada en CI.
+4. **Retención de datos del tier gratuito.** Google puede usar prompts para entrenamiento. Data real de Rappi requeriría tier pagado o Vertex AI.
 
 ---
 
-## Próximos pasos (si tuviera más tiempo)
+## 🔮 Próximos pasos (con más tiempo)
 
-### Corto plazo (1–2 días)
-- **Clickable findings en el reporte** → auto-populan preguntas en el chat. Reduce fricción de investigación.
-- **Plotly charts en chat** cuando la pregunta lo amerite (trends → line, comparaciones → bar).
-- **Exportación a CSV/PDF** para findings y respuestas.
-- **Envío automático del reporte semanal por email** (SMTP o SendGrid).
+**Quick wins (~1 día):**
+- Findings clickables en el reporte que auto-pueblen preguntas en el chat.
+- Gráficos Plotly cuando la pregunta lo amerite (tendencias → line, comparaciones → bar).
+- Exportación a CSV/PDF.
 
-### Mediano plazo (1–2 semanas)
-- **Golden question set + evals automáticos.** 100 preguntas con respuestas esperadas, accuracy trackeada en CI.
-- **Sliding window + compression** para conversaciones largas.
-- **Persistencia en Postgres** de sesiones y reportes históricos.
-- **Deployment** a Streamlit Cloud o contenedor en GCP.
+**Mediano plazo (~1 semana):**
+- Golden question set + evaluación automatizada con métricas de tool-selection accuracy.
+- Sliding-window para conversaciones largas.
+- Reporte semanal programado con delivery por email.
 
-### Largo plazo (1+ mes)
-- **Fine-tuning de Gemini o Claude** en preguntas específicas del dominio Rappi para mejorar tool-selection accuracy.
-- **Sistema de RAG ligero** sobre documentos internos (playbooks, procedimientos operacionales) para enriquecer recomendaciones.
-- **Dashboard ejecutivo en tiempo real** (no sólo reporte semanal): KPIs live, drill-down, alertas.
-- **Multi-agent:** un agente investigador (chat), un agente narrador (reportes), un agente de alertas (Slack/email cuando aparezcan anomalías críticas).
+**Largo plazo:**
+- Alertas en tiempo real a Slack para findings críticos.
+- Fine-tuning o optimización de prompts para terminología específica de Rappi.
+- Split multi-agent: roles separados de investigador, narrador y alertas.
 
 ---
+
+
+*Construido para el caso técnico de AI Engineer en Rappi. Feliz de caminar cualquier decisión de diseño o trade-off en detalle.*

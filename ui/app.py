@@ -134,61 +134,49 @@ with tab_chat:
         "Todos los números vienen de pandas; el LLM sólo compone la respuesta."
     )
 
-    # Replay message history
+    # ---- 1. Resolve the input source (typed, sample button, or none) ----
+    user_input = None
+    if "pending_user_input" in st.session_state:
+        user_input = st.session_state.pop("pending_user_input")
+
+    # ---- 2. If we have new input, process it BEFORE rendering history ----
+    if user_input:
+        # Append user message to history
+        st.session_state.messages.append({
+            "role": "user",
+            "content": user_input,
+        })
+
+        # Call the agent (may take a few seconds)
+        with st.spinner("Pensando…"):
+            try:
+                response = agent.chat(user_input)
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": response.text,
+                    "tool_calls": response.tool_calls,
+                })
+            except Exception as e:
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": f"⚠️ Error: {type(e).__name__}: {e}",
+                    "tool_calls": [],
+                })
+
+    # ---- 3. Render the full history (single source of truth) ----
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
-            # If this assistant turn had tool calls, show them in an expander
             if msg["role"] == "assistant" and msg.get("tool_calls"):
-                with st.expander(f"🔧 Tool calls ({len(msg['tool_calls'])})", expanded=False):
+                with st.expander(
+                    f"🔧 Tool calls ({len(msg['tool_calls'])})",
+                    expanded=False,
+                ):
                     for tc in msg["tool_calls"]:
                         st.code(
                             f"{tc['tool']}({tc['args']})\n→ {tc['result_summary']}",
                             language="python",
                         )
-
-    # Input handling — either typed or from a sample button
-    user_input = None
-    if "pending_user_input" in st.session_state:
-        user_input = st.session_state.pop("pending_user_input")
-
-
-
-    if user_input:
-        # Show the user message immediately
-        st.session_state.messages.append({"role": "user", "content": user_input})
-        with st.chat_message("user"):
-            st.markdown(user_input)
-
-        # Call the agent
-        with st.chat_message("assistant"):
-            with st.spinner("Pensando…"):
-                try:
-                    response = agent.chat(user_input)
-                    st.markdown(response.text)
-                    if response.tool_calls:
-                        with st.expander(
-                            f"🔧 Tool calls ({len(response.tool_calls)})",
-                            expanded=False,
-                        ):
-                            for tc in response.tool_calls:
-                                st.code(
-                                    f"{tc['tool']}({tc['args']})\n→ {tc['result_summary']}",
-                                    language="python",
-                                )
-                    st.session_state.messages.append({
-                        "role": "assistant",
-                        "content": response.text,
-                        "tool_calls": response.tool_calls,
-                    })
-                except Exception as e:
-                    err_msg = f"⚠️ Error: {type(e).__name__}: {e}"
-                    st.error(err_msg)
-                    st.session_state.messages.append({
-                        "role": "assistant",
-                        "content": err_msg,
-                        "tool_calls": [],
-                    })
 
 
 # --------------------------- REPORT TAB ---------------------------
