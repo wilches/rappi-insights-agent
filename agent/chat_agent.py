@@ -29,7 +29,7 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-MODEL = "gemini-2.5-flash-lite"
+MODEL = "gemini-2.5-flash"
 MAX_TOOL_ITERATIONS = 5  # Safety cap — stops runaway tool loops.
 
 
@@ -84,7 +84,9 @@ class ChatAgent:
                 config=gtypes.GenerateContentConfig(
                     system_instruction=SYSTEM_PROMPT,
                     tools=[self.tools],
-                    temperature=0.3,  # Mostly deterministic, a bit of warmth
+                    temperature=0.3,
+                    max_output_tokens=2048,
+                    thinking_config=gtypes.ThinkingConfig(thinking_budget=0),
                 ),
             )
 

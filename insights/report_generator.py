@@ -22,7 +22,7 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-MODEL = "gemini-2.5-flash-lite"
+MODEL = "gemini-2.5-flash"
 
 
 NARRATIVE_SYSTEM_PROMPT = """Eres un analista senior de operaciones de Rappi. Te dan una lista estructurada de hallazgos (findings) ya jerarquizados por severidad de negocio, y tu trabajo es redactar un reporte ejecutivo en español claro y accionable.
