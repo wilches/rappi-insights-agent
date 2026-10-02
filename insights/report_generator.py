@@ -22,7 +22,7 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-MODEL = "gemini-2.5-flash"
+MODEL = "gemini-3.8-flash"
 
 
 NARRATIVE_SYSTEM_PROMPT = """Eres un analista senior de operaciones de Rappi. Te dan una lista estructurada de hallazgos (findings) ya jerarquizados por severidad de negocio, y tu trabajo es redactar un reporte ejecutivo en español claro y accionable.
@@ -120,11 +120,12 @@ def generate_markdown_report(
         api_key = None
         try:
             import streamlit as st
-            api_key = st.secrets.get("GEMINI_API_KEY, None")
+            api_key = st.secrets.get("GEMINI_API_KEY")
         except (ImportError, FileNotFoundError, Exception):
             pass
         if not api_key:
             api_key = os.environ.get("GEMINI_API_KEY")
+        client = genai.Client(api_key=api_key)
 
     prompt = _build_report_prompt(selected_findings)
 
