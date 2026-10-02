@@ -29,7 +29,7 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-MODEL = "gemini-2.5-flash"
+MODEL = "gemini-3.8-flash"
 MAX_TOOL_ITERATIONS = 5  # Safety cap — stops runaway tool loops.
 
 
